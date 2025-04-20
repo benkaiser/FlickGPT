@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres
+    volumes:
+      - ./tmp/db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: default
+      POSTGRES_PASSWORD: password
+  web:
+    build: .
+    env_file:
+      - .env
+    environment:
+      RAILS_ENV: development
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-$(ruby -e "require 'securerandom'; puts SecureRandom.hex(64)")}
+      DATABASE_URL: postgres://default:password@db:5432/
+    command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 4400 -b '0.0.0.0'"
+    volumes:
+      - .:/myapp
+    ports:
+      - "4400:4400"
+    depends_on:
+      - db
+  migrate:
+    build: .
+    env_file:
+      - .env
+    environment:
+      RAILS_ENV: development
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-$(ruby -e "require 'securerandom'; puts SecureRandom.hex(64)")}
+      DATABASE_URL: postgres://default:password@db:5432/
+    command: bash -c "bundle exec rails db:create db:migrate"
+    volumes:
+      - .:/myapp
+    depends_on:
+      - db
+  worker:
+    build: .
+    env_file:
+      - .env
+    environment:
+      RAILS_ENV: development
+      DATABASE_URL: postgres://default:password@db:5432/
+    command: bash -c "bin/jobs"
+    volumes:
+      - .:/myapp
+    depends_on:
+      - db

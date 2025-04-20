@@ -15,6 +15,7 @@
 default: &default
   adapter: postgresql
   encoding: unicode
+  url: <%= ENV["DATABASE_URL"] %>
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
@@ -23,6 +24,7 @@ default: &default
 development:
   <<: *default
   database: flick_gpt_development
+  url: <%= ENV["DATABASE_URL"] %>
 
   # The specified database role being used to connect to PostgreSQL.
   # To create additional roles in PostgreSQL see `$ createuser --help`.
@@ -84,15 +86,3 @@ production:
     database: flick_gpt_production
     username: flick_gpt
     password: <%= ENV["FLICK_GPT_DATABASE_PASSWORD"] %>
-  cache:
-    <<: *primary_production
-    database: flick_gpt_production_cache
-    migrations_paths: db/cache_migrate
-  queue:
-    <<: *primary_production
-    database: flick_gpt_production_queue
-    migrations_paths: db/queue_migrate
-  cable:
-    <<: *primary_production
-    database: flick_gpt_production_cable
-    migrations_paths: db/cable_migrate
