@@ -12,6 +12,13 @@ Rails.application.routes.draw do
   # Defines the root path route ("/")
   root "home#index"
 
+  # Routes for movies
+  resources :movies do
+    collection do
+      get :search
+    end
+  end
+
   # Routes for recommendations only
   resources :recommendations, only: [:create]
 end

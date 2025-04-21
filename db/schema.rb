@@ -10,8 +10,32 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 0) do
+ActiveRecord::Schema[8.0].define(version: 2025_04_21_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
+  create_table "movies", force: :cascade do |t|
+    t.integer "tmdb_id", null: false
+    t.string "imdb_id"
+    t.string "title"
+    t.string "original_title"
+    t.decimal "vote_average", precision: 3, scale: 1
+    t.integer "vote_count"
+    t.date "release_date"
+    t.integer "runtime"
+    t.string "backdrop_path"
+    t.string "poster_path"
+    t.text "overview"
+    t.decimal "popularity", precision: 10, scale: 3
+    t.string "tagline"
+    t.text "genres"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["imdb_id"], name: "index_movies_on_imdb_id"
+    t.index ["popularity"], name: "index_movies_on_popularity"
+    t.index ["release_date"], name: "index_movies_on_release_date"
+    t.index ["title"], name: "index_movies_on_title"
+    t.index ["tmdb_id"], name: "index_movies_on_tmdb_id", unique: true
+    t.index ["vote_average"], name: "index_movies_on_vote_average"
+  end
 end
