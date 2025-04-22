@@ -1,5 +1,5 @@
 class Movie < ApplicationRecord
-  validates :tmdb_id, presence: true, uniqueness: true
+  validates :tmdb_id, uniqueness: { scope: :media_type }
 
   # Convert genres from stored comma separated string to array
   def genres_array

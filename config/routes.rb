@@ -16,6 +16,7 @@ Rails.application.routes.draw do
   resources :movies do
     collection do
       get :search
+      post :match
     end
   end
 

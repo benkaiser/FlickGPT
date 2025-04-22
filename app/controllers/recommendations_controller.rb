@@ -105,9 +105,7 @@ class RecommendationsController < ApplicationController
         {
           "title": "Movie Title",
           "year": 2023,
-          "genres": ["Genre1", "Genre2"],
-          "description": "Brief plot summary",
-          "reason": "Why I might enjoy it based on my preferences"
+          "reason": "Why I might enjoy it based on my preferences, never mention other movies here"
         },
         ...
       ]

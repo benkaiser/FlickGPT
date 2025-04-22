@@ -10,6 +10,8 @@ interface Movie {
   genres?: string[];
   description?: string;
   reason?: string;
+  poster_path?: string;
+  imdb_link?: string;
 }
 
 interface Rating {
@@ -27,6 +29,7 @@ const App = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [recommendations, setRecommendations] = useState<Movie[]>([]);
+  const [movieMatches, setMovieMatches] = useState<(Movie | null)[]>([]); // New state for movie matches
   const [error, setError] = useState<string | null>(null);
 
   const handleFileChange = (e: Event) => {
@@ -117,9 +120,37 @@ const App = () => {
     }
   };
 
+  const fetchMovieDetails = async (movie: Movie, index: number): Promise<void> => {
+    try {
+      const response = await fetch('/movies/match', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement).content
+        },
+        body: JSON.stringify({ title: movie.title, year: movie.year })
+      });
+
+      if (!response.ok) {
+        console.error(`Failed to fetch movie details: ${response.status}`);
+        return;
+      }
+
+      const matchedMovie = await response.json();
+      setMovieMatches(prev => {
+        const updated = [...prev];
+        updated[index] = matchedMovie;
+        return updated;
+      });
+    } catch (err) {
+      console.error('Error fetching movie details:', err);
+    }
+  };
+
   const fetchRecommendations = async (ratings: Rating[], excludedTitles: string[]) => {
     setIsGenerating(true);
     setRecommendations([]);
+    setMovieMatches([]); // Reset movie matches when fetching new recommendations
     setError(null);
 
     try {
@@ -142,18 +173,19 @@ const App = () => {
 
       let stream = events(response);
       let completion = '';
+      let currentIndex = -1;
 
       for await (let event of stream) {
         if (event.data === '[DONE]') {
           console.log('Stream complete');
           setIsGenerating(false);
+          await fetchMovieDetails(recommendations[recommendations.length - 1], currentIndex);
           break;
         }
 
         try {
           const pieceOfData = JSON.parse(event.data);
           if (Array.isArray(pieceOfData)) {
-            // If the server returns a complete array of recommendations at once
             setRecommendations(pieceOfData);
           } else {
             const content = pieceOfData.choices[0]?.delta?.content || '';
@@ -163,6 +195,14 @@ const App = () => {
                 const parsedMovies = parse(completion) as Movie[];
                 if (Array.isArray(parsedMovies)) {
                   setRecommendations(parsedMovies);
+
+                  // Match the previous movie (if any)
+                  if (currentIndex >= 0 && currentIndex < parsedMovies.length - 1) {
+                    const previousMovie = parsedMovies[currentIndex];
+                    await fetchMovieDetails(previousMovie, currentIndex);
+                  }
+
+                  currentIndex = parsedMovies.length - 1;
                 }
               } catch (e) {
                 console.error('Error parsing JSON:', e);
@@ -231,33 +271,73 @@ const App = () => {
                   {error}
                 </div>
               )}
-
-              {recommendations.length > 0 && (
+              {movieMatches.filter(match => match !== null).length > 0 && (
                 <div>
                   <h4 className="mb-3">Your Recommended Movies</h4>
                   <div className="list-group">
-                    {recommendations.map((movie, index) => (
-                      <div key={`${movie.title}-${movie.year}-${index}`} className="list-group-item">
-                        <div className="d-flex justify-content-between align-items-center">
-                          <h5 className="mb-1">{movie.title} ({movie.year})</h5>
+                    {movieMatches.map((matchedMovie, index) => {
+                      if (!matchedMovie) return null; // Skip unmatched movies
+                      const recommendation = recommendations[index];
+                      return (
+                        <div
+                          key={`${matchedMovie.title}-${matchedMovie.year}-${index}`}
+                          className="list-group-item d-flex align-items-center gap-4"
+                          style={{ minHeight: '200px' }}
+                        >
+                          <div
+                            style={{
+                              width: '200px',
+                              height: '300px',
+                              display: 'flex',
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                              overflow: 'hidden',
+                              backgroundColor: '#f8f9fa'
+                            }}
+                          >
+                            {matchedMovie.poster_path ? (
+                              <img
+                                src={matchedMovie.poster_path}
+                                alt={`${matchedMovie.title} poster`}
+                                className="img-fluid"
+                                style={{ maxHeight: '100%', maxWidth: '100%' }}
+                              />
+                            ) : (
+                              <div style={{ width: '100%', height: '100%' }}></div>
+                            )}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <h5 className="mb-1">{matchedMovie.title} ({matchedMovie.year})</h5>
+                            {matchedMovie.genres && (
+                              <p className="mb-1">
+                                <small className="text-muted">
+                                  {matchedMovie.genres.join(', ')}
+                                </small>
+                              </p>
+                            )}
+                            {matchedMovie.description && (
+                              <p className="mb-1">{matchedMovie.description}</p>
+                            )}
+                            {recommendation.reason && (
+                              <p className="mb-1">
+                                <strong>Why you might like it:</strong> {recommendation.reason}
+                              </p>
+                            )}
+                            {matchedMovie.imdb_link && (
+                              <p className="mt-2">
+                                <a href={matchedMovie.imdb_link} target="_blank" rel="noopener noreferrer">
+                                  <img
+                                    src="/imdb.svg"
+                                    alt="IMDb"
+                                    style={{ width: '50px', height: 'auto' }}
+                                  />
+                                </a>
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        {movie.genres && (
-                          <p className="mb-1">
-                            <small className="text-muted">
-                              {movie.genres.join(', ')}
-                            </small>
-                          </p>
-                        )}
-                        {movie.description && (
-                          <p className="mb-1">{movie.description}</p>
-                        )}
-                        {movie.reason && (
-                          <p className="mb-0 text-muted">
-                            <small>Why you might like it: {movie.reason}</small>
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
