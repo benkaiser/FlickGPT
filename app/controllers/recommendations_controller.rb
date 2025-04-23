@@ -1,78 +1,117 @@
-require 'net/http'
-require 'uri'
-require 'json'
+require "net/http"
+require "uri"
+require "json"
 
 class RecommendationsController < ApplicationController
   include ActionController::Live
 
   def create
-    response.headers['Content-Type'] = 'text/event-stream'
-    response.headers['Cache-Control'] = 'no-cache'
-    response.headers['Connection'] = 'keep-alive'
+    response.headers["Content-Type"] = "text/event-stream"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Connection"] = "keep-alive"
 
     begin
-      # Get the ratings and excluded titles data from the request parameters
-      ratings_data = params[:ratings]
-      excluded_titles = params[:excluded_titles] || []
+      # Extract parameters
+      interest_type = params[:interest_type] # 'imdb', 'favorites', 'genres'
+      ratings_data = params[:ratings] # Array of rating objects for 'imdb'
+      excluded_titles = params[:excluded_titles] || [] # Array of strings for 'imdb'
+      favorite_movies_data = params[:favorite_movies] # Array of {title, year} for 'favorites'
+      genres_data = params[:genres] # Array of strings for 'genres'
+      mood = params[:mood] || "whatever" # String, e.g., 'need-a-laugh'
+      media_type = params[:media_type] || "movie" # 'movie', 'tv', 'both'
 
-      # Remove top rated movies from exclusion list to avoid duplication in the prompt
-      top_rated_titles = ratings_data.map { |r| "#{r[:title]} (#{r[:year]})" }
-      excluded_titles = excluded_titles.reject { |title| top_rated_titles.include?(title) }
+      # Validate input based on interest_type
+      valid_input = case interest_type
+        when "imdb"
+          ratings_data.present?
+        when "favorites"
+          favorite_movies_data.present?
+        when "genres"
+          genres_data.present?
+        else
+          false
+        end
 
-      if ratings_data.blank?
-        response.stream.write("data: #{JSON.generate({ error: 'No ratings data provided' })}\n\n")
+      unless valid_input
+        response.stream.write("data: #{JSON.generate({ error: "Invalid or missing interest data provided" })}\n\n")
         response.stream.write("data: [DONE]\n\n")
         return
       end
 
-      # Format movies for LLM input - more concise format
-      movie_list = ratings_data.map do |movie|
-        "#{movie[:title]} (#{movie[:year]}) - #{movie[:user_rating]}/10"
-      end
+      # Prepare data for the prompt
+      prompt_data = {
+        interest_type: interest_type,
+        ratings: ratings_data,
+        excluded_titles: excluded_titles,
+        favorite_movies: favorite_movies_data,
+        genres: genres_data,
+        mood: mood,
+        media_type: media_type,
+      }
 
-      prompt = generate_llm_prompt(movie_list, excluded_titles)
-      # log the prompt for debugging
-      Rails.logger.info("Generated Prompt: #{prompt}")
+      prompt = generate_llm_prompt(prompt_data)
+      Rails.logger.info("Generated Prompt: #{prompt}") # Log for debugging
 
-      # Stream response from DeepInfra
-      uri = URI.parse("https://api.deepinfra.com/v1/openai/chat/completions")
+      # Stream response from DeepInfra (or other LLM provider)
+      uri = URI.parse(ENV.fetch("LLM_API_URL", "https://api.deepinfra.com/v1/openai/chat/completions"))
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = true
 
       request = Net::HTTP::Post.new(uri.path)
       request["Content-Type"] = "application/json"
-      request["Authorization"] = "Bearer #{ENV['DEEPINFRA_API_KEY'] || 'YOUR_API_KEY_HERE'}"
+      request["Authorization"] = "Bearer #{ENV["DEEPINFRA_API_KEY"]}" # Ensure API key is set
 
       request.body = JSON.generate({
-        model: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        model: ENV.fetch("LLM_MODEL", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+
         stream: true,
+        response_format: { type: "json_object" },
         messages: [
-          {
-            role: "user",
-            content: prompt
-          }
-        ]
+          { role: "system", content: "You are a movie and TV show recommendation assistant. Respond ONLY with the requested JSON format. DO NOT recommend any titles mentioned by the user, they do not want to see them again." },
+          { role: "user", content: prompt },
+          interest_type == "imdb" ? { role: "system", content: "I will make sure to avoid recommending the following titles: #{ratings_data.map { |m| "#{m["title"]} (#{m["year"]})" }.join(", ")}" } : nil
+        ].compact, # Remove nil entries
+      # Optional: Adjust temperature or other parameters if needed
+      # temperature: 0.7
       })
 
       http.request(request) do |api_response|
-        if api_response.code != "200"
-          response.stream.write("data: #{JSON.generate({ error: 'API request failed', status: api_response.code })}\n\n")
+        unless api_response.code == "200"
+          error_body = api_response.body rescue "Unknown API error"
+          Rails.logger.error("LLM API Error: #{api_response.code} - #{error_body}")
+          response.stream.write("data: #{JSON.generate({ error: "API request failed", status: api_response.code, details: error_body })}\n\n")
           response.stream.write("data: [DONE]\n\n")
           return
         end
 
+        buffer = ""
         api_response.read_body do |chunk|
-          if chunk.strip.start_with?('data:')
-            response.stream.write("#{chunk}\n")
+          buffer << chunk
+          # Process buffer line by line for SSE events
+          while (line_end = buffer.index("\n")) != nil
+            line = buffer.slice!(0, line_end + 1).strip
+            # Forward valid SSE lines directly to the client
+            if line.start_with?("data:")
+              response.stream.write("#{line}\n\n") # Ensure double newline for SSE
+            elsif line.present? && !line.start_with?("event:") && !line.start_with?("id:") && !line.start_with?(":")
+              # Log unexpected lines from the API if necessary
+              Rails.logger.warn("Unexpected LLM API output line: #{line}")
+            end
           end
+        end
+        # Process any remaining data in the buffer after the stream ends
+        if buffer.strip.start_with?("data:")
+          response.stream.write("#{buffer.strip}\n\n")
         end
       end
 
       response.stream.write("data: [DONE]\n\n")
-    rescue IOError
+    rescue IOError => e
       # Client disconnected
+      Rails.logger.info("Client disconnected: #{e.message}")
     rescue StandardError => e
-      response.stream.write("data: #{JSON.generate({ error: e.message })}\n\n")
+      Rails.logger.error("Recommendation Error: #{e.message}\n#{e.backtrace.join("\n")}")
+      response.stream.write("data: #{JSON.generate({ error: "An internal server error occurred: #{e.message}" })}\n\n")
       response.stream.write("data: [DONE]\n\n")
     ensure
       response.stream.close
@@ -81,37 +120,68 @@ class RecommendationsController < ApplicationController
 
   private
 
-  def generate_llm_prompt(movies, excluded_titles)
-    excluded_section = if excluded_titles.present?
-      <<~EXCLUDED
-        Please DO NOT recommend any of the following movies that I've already seen:
-        #{excluded_titles.join(', ')}
-      EXCLUDED
-    else
-      ""
-    end
+  def generate_llm_prompt(data)
+    interest_section = case data[:interest_type]
+      when "imdb"
+        # Remove top rated movies from exclusion list to avoid duplication in the prompt
+        top_rated_titles = data[:ratings].map { |r| "#{r["title"]} (#{r["year"]})" }
+        # clean_excluded_titles = (data[:excluded_titles] || []).reject { |title| top_rated_titles.include?(title) }
+        # clean_excluded_titles = data[:excluded_titles]
+
+        # excluded_section = if clean_excluded_titles.present?
+        #     <<~EXCLUDED
+        #       DO NOT recommend any of the following titles that I've already seen:
+        #       #{clean_excluded_titles.join(", ")}
+        #     EXCLUDED
+        #   else
+        #     ""
+        #   end
+
+        <<~IMDB
+          My rated movies/shows (Title (Year) - Rating/10):
+          #{data[:ratings].map { |m| "#{m["title"]} (#{m["year"]}) - #{m["user_rating"]}/10" }.join(", ")}
+        IMDB
+      when "favorites"
+        <<~FAVORITES
+          Some of my favorite movies/shows are:
+          #{data[:favorite_movies].map { |m| "#{m["title"]} (#{m["year"]})" }.join("\n")}
+        FAVORITES
+      when "genres"
+        <<~GENRES
+          I enjoy the following genres:
+          #{data[:genres].join(", ")}
+        GENRES
+      else
+        "" # Should not happen due to validation
+      end
+
+    preferences_section = <<~PREFS
+      Scope the recommendatinos down to #{data[:media_type] == "both" ? "movies or TV shows" : (data[:media_type] == "tv" ? "TV shows" : "movies")}.
+      My current mood is: #{data[:mood] == "Whatever" ? "flexible, surprise me!" : data[:mood].gsub("-", " ")}.
+    PREFS
 
     <<~PROMPT
-      Based on the following list of my favorite rated movies, please recommend 5 movies that I might like.
+      Based on my interests below, please recommend 5 new titles that I haven't seen before.
 
-      My favorite movies:
-      #{movies.join("\n")}
+      #{interest_section.strip}
 
-      #{excluded_section}
+      #{preferences_section.strip}
 
-      Please respond only in this exact JSON format and nothing else:
+      Please respond ONLY in this exact JSON format and nothing else:
+      ```json
+      {
+        "recommendations": [
+          {
+            "title": "Movie or TV Show Title",
+            "year": YYYY,
+            "reason": "A brief explanation of 1-2 sentences on why this title is recommended for me based on my interests.",
+          },
+          // ... up to 5 recommendations total
+        ]
+      }
       ```
-      [
-        {
-          "title": "Movie Title",
-          "year": 2023,
-          "reason": "Why I might enjoy it based on my preferences, never mention other movies here"
-        },
-        ...
-      ]
-      ```
 
-      Make sure to recommend varied movies that match my taste profile. Focus on the genres, themes, and styles I seem to enjoy.
+      Please provide me with the 5 recommendations of titles not in the above list.
     PROMPT
   end
 end
