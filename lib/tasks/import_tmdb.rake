@@ -14,8 +14,8 @@ namespace :tmdb do
     tv_kaggle_url = ENV.fetch('TV_KAGGLE_URL', 'https://www.kaggle.com/api/v1/datasets/download/asaniczka/full-tmdb-tv-shows-dataset-2023-150k-shows')
 
     # Download and extract movies
-    # download_and_extract(movie_kaggle_url, movie_csv_path, 'movies.zip')
-    # activerecord_batch_import(movie_csv_path, batch_size, 'movie')
+    download_and_extract(movie_kaggle_url, movie_csv_path, 'movies.zip')
+    activerecord_batch_import(movie_csv_path, batch_size, 'movie')
 
     # Download and extract TV shows
     download_and_extract(tv_kaggle_url, tv_csv_path, 'tv')

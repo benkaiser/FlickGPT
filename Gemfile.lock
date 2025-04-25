@@ -76,8 +76,6 @@ GEM
       uri (>= 0.13.1)
     addressable (2.8.7)
       public_suffix (>= 2.0.2, < 7.0)
-    archive-zip (0.12.0)
-      io-like (~> 0.3.0)
     ast (2.4.3)
     base64 (0.2.0)
     bcrypt_pbkdf (1.1.1)
@@ -124,7 +122,6 @@ GEM
     i18n (1.14.7)
       concurrent-ruby (~> 1.0)
     io-console (0.8.0)
-    io-like (0.3.1)
     irb (1.15.2)
       pp (>= 0.6.0)
       rdoc (>= 4.0.0)
@@ -369,7 +366,6 @@ PLATFORMS
 
 DEPENDENCIES
   activerecord-import
-  archive-zip
   bootsnap
   brakeman
   capybara
