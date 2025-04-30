@@ -5,7 +5,8 @@
     "esbuild": "^0.25.2"
   },
   "scripts": {
-    "build:js": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs",
+    "build:js": "yarn build",
     "watch:js": "node esbuild.config.mjs --watch",
     "build:css:compile": "sass ./app/assets/stylesheets/application.bootstrap.scss:./app/assets/builds/application.css --silence-deprecation=import,color-functions,global-builtin --no-source-map --load-path=node_modules",
     "build:css:prefix": "postcss ./app/assets/builds/application.css --use=autoprefixer --output=./app/assets/builds/application.css",
