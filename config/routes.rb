@@ -17,6 +17,7 @@ Rails.application.routes.draw do
     collection do
       get :search
       post :match
+      get :im_feeling_lucky_youtube
     end
   end
 

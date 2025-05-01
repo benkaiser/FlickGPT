@@ -47,4 +47,21 @@ class MoviesController < ApplicationController
       render json: { error: "Movie not found" }, status: :not_found
     end
   end
+
+  def im_feeling_lucky_youtube
+    title = params[:title]
+    year = params[:year]
+
+    # Create a search query combining title and year
+    search_query = year ? "#{title} #{year} trailer" : "#{title} trailer"
+
+    # Get the first video ID from YouTube search
+    video_id = YoutubeService.search(search_query)
+
+    if video_id
+      render json: { video_id: video_id }
+    else
+      render json: { error: "No YouTube videos found" }, status: :not_found
+    end
+  end
 end
