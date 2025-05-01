@@ -14,7 +14,6 @@ class RecommendationsController < ApplicationController
       # Extract parameters
       interest_type = params[:interest_type] # 'imdb', 'favorites', 'genres'
       ratings_data = params[:ratings] # Array of rating objects for 'imdb'
-      excluded_titles = params[:excluded_titles] || [] # Array of strings for 'imdb'
       favorite_movies_data = params[:favorite_movies] # Array of {title, year} for 'favorites'
       genres_data = params[:genres] # Array of strings for 'genres'
       mood = params[:mood] || "whatever" # String, e.g., 'need-a-laugh'
@@ -42,7 +41,6 @@ class RecommendationsController < ApplicationController
       prompt_data = {
         interest_type: interest_type,
         ratings: ratings_data,
-        excluded_titles: excluded_titles,
         favorite_movies: favorite_movies_data,
         genres: genres_data,
         mood: mood,
@@ -123,20 +121,6 @@ class RecommendationsController < ApplicationController
   def generate_llm_prompt(data)
     interest_section = case data[:interest_type]
       when "imdb"
-        # Remove top rated movies from exclusion list to avoid duplication in the prompt
-        top_rated_titles = data[:ratings].map { |r| "#{r["title"]} (#{r["year"]})" }
-        # clean_excluded_titles = (data[:excluded_titles] || []).reject { |title| top_rated_titles.include?(title) }
-        # clean_excluded_titles = data[:excluded_titles]
-
-        # excluded_section = if clean_excluded_titles.present?
-        #     <<~EXCLUDED
-        #       DO NOT recommend any of the following titles that I've already seen:
-        #       #{clean_excluded_titles.join(", ")}
-        #     EXCLUDED
-        #   else
-        #     ""
-        #   end
-
         <<~IMDB
           My rated movies/shows (Title (Year) - Rating/10):
           #{data[:ratings].map { |m| "#{m["title"]} (#{m["year"]}) - #{m["user_rating"]}/10" }.join(", ")}
@@ -161,7 +145,7 @@ class RecommendationsController < ApplicationController
     PREFS
 
     <<~PROMPT
-      Based on my interests below, please recommend 5 new titles that I haven't seen before.
+      Based on my interests below, please recommend 10 new titles that I haven't seen before.
 
       #{interest_section.strip}
 
@@ -174,14 +158,19 @@ class RecommendationsController < ApplicationController
           {
             "title": "Movie or TV Show Title",
             "year": YYYY,
-            "reason": "A brief explanation of 1-2 sentences on why this title is recommended for me based on my interests.",
+            "reason": "A brief explanation of 1-2 sentences on why this title is recommended for me based on my interests."
           },
-          // ... up to 5 recommendations total
+          {
+            "title": "Another Show",
+            "year": YYYY,
+            "reason": "..."
+          },
+          ...more titles
         ]
       }
       ```
 
-      Please provide me with the 5 recommendations of titles not in the above list.
+      Please provide me with the 10 recommendations of titles not in the above list.
     PROMPT
   end
 end

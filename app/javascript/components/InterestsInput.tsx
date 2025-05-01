@@ -4,7 +4,7 @@ import * as Papa from 'papaparse';
 import { MovieSearchInput } from './MovieSearchInput';
 import { Movie, Rating } from '../types';
 
-export type InterestType = 'imdb' | 'favorites' | 'genres';
+export type InterestType = 'favorites' | 'imdb' | 'genres';
 
 interface InterestsInputProps {
   interestType: InterestType;
@@ -108,8 +108,7 @@ export const InterestsInput = (props: InterestsInputProps) => {
             }
 
             const allTitles = allRatings
-              .map(rating => `${rating.title} (${rating.year})`)
-              .slice(0, 2000);
+              .map(rating => `${rating.title} (${rating.year})`);
 
             const topRatings = [...allRatings]
               .sort((a, b) => {
@@ -118,7 +117,7 @@ export const InterestsInput = (props: InterestsInputProps) => {
                 }
                 return new Date(b.date_rated).getTime() - new Date(a.date_rated).getTime();
               })
-              .slice(0, 1000);
+              .slice(0, 500);
 
             resolve({ topRatings, allTitles });
           } catch (err) {
@@ -153,8 +152,14 @@ export const InterestsInput = (props: InterestsInputProps) => {
       case 'imdb':
         return (
           <div>
-            <p className="text-muted small">Upload your IMDb ratings CSV export. We'll analyze your top 1000 rated shows, and make sure to skip recommending the next 2000 you have rated.</p>
-            <div className="mb-3">
+              <p className="text-muted small">Upload your IMDb ratings CSV export. We'll analyze your top-rated content and ensure you only see recommendations for titles you haven't already rated.</p>            <div className="mb-3">
+              <p>To export your ratings from IMDb:</p>
+              <ol>
+                <li>Go to your <a href="https://www.imdb.com/user/" target="_blank">IMDb profile</a>.</li>
+                <li>Click on "Ratings".</li>
+                <li>Click on "Export" to download your ratings as a CSV file.</li>
+              </ol>
+              <p>Once the file is available in <a href="https://www.imdb.com/exports/" target="_blank">your IMDb exports</a>, download it and upload it here.</p>
               <input
                 type="file"
                 className="form-control"
@@ -223,20 +228,20 @@ export const InterestsInput = (props: InterestsInputProps) => {
       <ul className="nav nav-tabs nav-fill">
         <li className="nav-item">
           <button
-            className={`nav-link ${interestType === 'imdb' ? 'active' : ''}`}
-            onClick={() => setInterestType('imdb')}
-            type="button"
-          >
-            IMDb Ratings
-          </button>
-        </li>
-        <li className="nav-item">
-          <button
             className={`nav-link ${interestType === 'favorites' ? 'active' : ''}`}
             onClick={() => setInterestType('favorites')}
             type="button"
           >
             Favorite Movies/Shows
+          </button>
+        </li>
+        <li className="nav-item">
+          <button
+            className={`nav-link ${interestType === 'imdb' ? 'active' : ''}`}
+            onClick={() => setInterestType('imdb')}
+            type="button"
+          >
+            IMDb Ratings
           </button>
         </li>
         <li className="nav-item">

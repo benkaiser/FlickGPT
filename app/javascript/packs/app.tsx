@@ -32,7 +32,7 @@ class App extends Component<{}, AppState> {
   constructor(props: {}) {
     super(props);
     this.state = {
-      interestType: 'imdb',
+      interestType: 'favorites',
       ratingsFile: null,
       topRatings: [],
       allTitles: [],
@@ -61,6 +61,15 @@ class App extends Component<{}, AppState> {
 
   fetchMovieDetails = async (movie: Movie, index: number): Promise<void> => {
     try {
+      // Skip fetching if this movie is in our allTitles list (for IMDb ratings)
+      if (this.state.interestType === 'imdb') {
+        const movieTitle = `${movie.title} (${movie.year})`;
+        if (this.state.allTitles.some(title => title.toLowerCase() === movieTitle.toLowerCase())) {
+          console.log(`Skipping already seen movie: ${movieTitle}`);
+          return;
+        }
+      }
+
       const response = await fetch('/movies/match', {
         method: 'POST',
         headers: {
@@ -100,7 +109,7 @@ class App extends Component<{}, AppState> {
       error: null
     });
 
-    const { interestType, selectedMood, selectedMediaType, topRatings, allTitles, favoriteMovies, selectedGenres } = this.state;
+    const { interestType, selectedMood, selectedMediaType, topRatings, favoriteMovies, selectedGenres } = this.state;
 
     const payload: any = {
       interest_type: interestType,
@@ -110,7 +119,6 @@ class App extends Component<{}, AppState> {
 
     if (interestType === 'imdb') {
       payload.ratings = topRatings;
-      payload.excluded_titles = allTitles;
     } else if (interestType === 'favorites') {
       payload.favorite_movies = favoriteMovies.map(m => ({ title: m.title, year: m.year }));
     } else if (interestType === 'genres') {
@@ -212,6 +220,11 @@ class App extends Component<{}, AppState> {
                 <h3 className="mb-0">FlickGPT Recommendations</h3>
               </div>
               <div className="card-body">
+                <p>
+                  Get personalized movie and TV show recommendations based on your interests.
+                  <br />
+                  Choose your favorite movies, genres, or upload your IMDb ratings to get started!
+                </p>
                 <div className="mb-4">
                   <h4 className="mb-3">Your Interests</h4>
                   <InterestsInput
