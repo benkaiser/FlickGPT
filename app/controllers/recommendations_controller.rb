@@ -158,7 +158,7 @@ class RecommendationsController < ApplicationController
           {
             "title": "Movie or TV Show Title",
             "year": YYYY,
-            "reason": "A brief explanation of 1-2 sentences on why this title is recommended for me based on my interests."
+            "reason": "A brief explanation of 1-2 sentences on why this title is recommended for me based on my interests, do not reference any specific title."
           },
           {
             "title": "Another Show",

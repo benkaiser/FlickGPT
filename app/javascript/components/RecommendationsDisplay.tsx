@@ -2,47 +2,21 @@ import { h, Fragment } from 'preact';
 import { Movie } from '../types';
 
 interface RecommendationsDisplayProps {
-  recommendations: Movie[]; // Original recommendations from LLM
-  movieMatches: (Movie | null)[]; // Matched movie details (or null/original if match failed)
+  movieMatches: (Movie | null)[];
   isGenerating: boolean;
 }
 
-export const RecommendationsDisplay = ({ recommendations, movieMatches, isGenerating }: RecommendationsDisplayProps) => {
-
-  // Use movieMatches as the primary source for display, fallback to recommendations if needed
-  const displayItems = movieMatches.map((match, index) => match ?? recommendations[index]);
-
-
+export const RecommendationsDisplay = ({ movieMatches, isGenerating }: RecommendationsDisplayProps) => {
   // Only render if there are items to display or if it's currently generating
-  if (displayItems.length === 0 && !isGenerating) {
+  if (movieMatches.length === 0 && !isGenerating) {
     return null;
   }
 
   return (
     <div className="list-group">
-      {displayItems.map((item, index) => {
-        // Handle potential null items if matching is in progress or failed unexpectedly
-        if (!item) {
-           // Show a loading placeholder if generating and this item hasn't loaded
-           if (isGenerating) {
-               return (
-                   <div key={`loading-${index}`} className="list-group-item d-flex align-items-center gap-4" style={{ minHeight: '200px', backgroundColor: '#f8f9fa' }}>
-                       <div style={{ width: '200px', height: '300px', backgroundColor: '#e9ecef' }} className="placeholder"></div>
-                       <div style={{ flex: 1 }} className="placeholder-glow">
-                           <span className="placeholder col-6 mb-2"></span>
-                           <span className="placeholder col-8"></span>
-                           <span className="placeholder col-4"></span>
-                           <span className="placeholder col-7 mt-2"></span>
-                       </div>
-                   </div>
-               );
-           }
-           return null; // Don't render anything if not generating and item is null
-        }
-
+      {movieMatches.filter(item => !!item).map((item, index) => {
         // Determine if this item is fully matched or just the initial recommendation
-        const isMatched = !!item.poster_path; // Use poster_path presence as an indicator of a successful match
-        const recommendationReason = recommendations[index]?.reason; // Always get reason from original recommendations
+        const recommendationReason = item?.reason; // Always get reason from original recommendations
 
         return (
           <div
@@ -80,7 +54,7 @@ export const RecommendationsDisplay = ({ recommendations, movieMatches, isGenera
             </div>
 
             {/* Details Area */}
-            <div style={{ flex: 1, alignSelf: 'stretch' }} className={!isMatched && isGenerating ? 'placeholder-glow' : ''}>
+            <div style={{ flex: 1, alignSelf: 'stretch' }}>
               <h5 className="mb-1">
                 {item.title || <span className="placeholder col-6"></span>}
                 {item.year ? ` (${item.year})` : ''}
@@ -111,18 +85,11 @@ export const RecommendationsDisplay = ({ recommendations, movieMatches, isGenera
                   </a>
                 </p>
               )}
-               {!isMatched && isGenerating && ( // Show placeholders for text if loading match
-                   <Fragment>
-                       <span className="placeholder col-8 d-block mb-1"></span>
-                       <span className="placeholder col-4 d-block mb-1"></span>
-                       <span className="placeholder col-7 d-block"></span>
-                   </Fragment>
-               )}
             </div>
           </div>
         );
       })}
-       {isGenerating && displayItems.length > 0 && displayItems.some(item => !item) && (
+       {isGenerating && movieMatches.length > 0 && movieMatches.some(item => !item) && (
            // Show a final loading indicator if still generating more items
            <div className="list-group-item text-center p-3">
                <div className="spinner-border spinner-border-sm text-primary me-2" role="status">

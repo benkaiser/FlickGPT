@@ -300,7 +300,6 @@ class App extends Component<{}, AppState> {
                       </div>
                     )}
                     <RecommendationsDisplay
-                      recommendations={recommendations}
                       movieMatches={movieMatches}
                       isGenerating={isGenerating}
                     />
