@@ -119,6 +119,7 @@ namespace :tmdb do
         # Map fields
         movie = {
           tmdb_id: row['id'].to_i,
+          imdb_id: row['imdb_id'],
           title: media_type == 'tv' ? row['name'] : row['title'],
           original_title: media_type == 'tv' ? row['original_name'] : row['original_title'],
           vote_average: row['vote_average'].to_f,
@@ -164,7 +165,7 @@ namespace :tmdb do
       conflict_target: [:tmdb_id, :media_type],
       columns: [:title, :original_title, :vote_average, :vote_count, :overview,
                 :tagline, :backdrop_path, :poster_path, :genres, :popularity,
-                :runtime, :number_of_seasons, :number_of_episodes, :release_date, :updated_at]
+                :runtime, :number_of_seasons, :number_of_episodes, :release_date, :updated_at, :imdb_id]
     }
   end
 
