@@ -108,6 +108,14 @@ namespace :tmdb do
         # Skip rows without a valid ID
         next if row['id'].blank?
 
+        # Parse release date
+        release_date = nil
+        if media_type == 'tv' && row['first_air_date'].present?
+          release_date = Date.parse(row['first_air_date']) rescue nil
+        elsif media_type == 'movie' && row['release_date'].present?
+          release_date = Date.parse(row['release_date']) rescue nil
+        end
+
         # Map fields
         movie = {
           tmdb_id: row['id'].to_i,
@@ -124,6 +132,7 @@ namespace :tmdb do
           runtime: media_type == 'tv' ? row['episode_run_time'].to_i : row['runtime'].to_i,
           number_of_seasons: media_type == 'tv' ? row['number_of_seasons'].to_i : nil,
           number_of_episodes: media_type == 'tv' ? row['number_of_episodes'].to_i : nil,
+          release_date: release_date,
           media_type: media_type
         }
 
@@ -155,7 +164,7 @@ namespace :tmdb do
       conflict_target: [:tmdb_id, :media_type],
       columns: [:title, :original_title, :vote_average, :vote_count, :overview,
                 :tagline, :backdrop_path, :poster_path, :genres, :popularity,
-                :runtime, :number_of_seasons, :number_of_episodes, :updated_at]
+                :runtime, :number_of_seasons, :number_of_episodes, :release_date, :updated_at]
     }
   end
 
