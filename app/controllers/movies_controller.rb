@@ -40,6 +40,7 @@ class MoviesController < ApplicationController
         imdb_id: movie.imdb_id,
         imdb_link: movie.imdb_id ? "https://www.imdb.com/title/#{movie.imdb_id}" : nil,
         imdb_rating: movie.vote_average, # Assuming vote_average is the rating
+        imdb_vote_count: movie.vote_count,
         poster_path: movie.poster_path ? "https://image.tmdb.org/t/p/w500#{movie.poster_path}" : nil,
         backdrop_path: movie.backdrop_path ? "https://image.tmdb.org/t/p/w1280#{movie.backdrop_path}" : nil # Larger backdrop
       }

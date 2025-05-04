@@ -10,6 +10,7 @@ export interface Movie {
   imdb_link?: string;
   imdb_id?: string;
   imdb_rating?: number;
+  imdb_vote_count?: number;
   backdrop_path?: string;
   // From Search Input Component
   tmdb_id?: number; // Or relevant ID from your Movie model
