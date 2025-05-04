@@ -24,9 +24,55 @@ namespace :tmdb do
     puts "TMDB import completed!"
   end
 
+  desc 'Download and overlay IMDb data on existing movies'
+  task :overlay_imdb => :environment do
+    # Configuration
+    batch_size = ENV.fetch('BATCH_SIZE', 5000).to_i
+    imdb_csv_path = Rails.root.join('tmp', 'imdb_data.csv')
+    imdb_kaggle_url = ENV.fetch('IMDB_KAGGLE_URL', 'https://www.kaggle.com/api/v1/datasets/download/octopusteam/full-imdb-dataset')
+
+    # Download and extract IMDb data
+    download_and_extract(imdb_kaggle_url, imdb_csv_path, 'imdb.zip', 'data.csv')
+    overlay_imdb_data_in_memory(imdb_csv_path)
+
+    puts "IMDb data overlay completed!"
+  end
+
+  desc 'Remove all indexes except unique constraint to speed up bulk imports'
+  task :remove_indexes => :environment do
+    puts "Removing indexes from movies table to speed up bulk operations..."
+
+    ActiveRecord::Base.connection.execute(<<-SQL)
+      DROP INDEX IF EXISTS index_movies_on_imdb_id;
+      DROP INDEX IF EXISTS index_movies_on_popularity;
+      DROP INDEX IF EXISTS index_movies_on_release_date;
+      DROP INDEX IF EXISTS index_movies_on_title_gist_trgm;
+      DROP INDEX IF EXISTS index_movies_on_tmdb_id;
+      DROP INDEX IF EXISTS index_movies_on_vote_average;
+    SQL
+
+    puts "Indexes removed. Only unique constraint remains."
+  end
+
+  desc 'Restore all indexes after bulk import operations'
+  task :restore_indexes => :environment do
+    puts "Restoring indexes to movies table..."
+
+    ActiveRecord::Base.connection.execute(<<-SQL)
+      CREATE INDEX IF NOT EXISTS index_movies_on_imdb_id ON movies (imdb_id);
+      CREATE INDEX IF NOT EXISTS index_movies_on_popularity ON movies (popularity);
+      CREATE INDEX IF NOT EXISTS index_movies_on_release_date ON movies (release_date);
+      CREATE INDEX IF NOT EXISTS index_movies_on_title_gist_trgm ON movies USING gist (title gist_trgm_ops);
+      CREATE INDEX IF NOT EXISTS index_movies_on_tmdb_id ON movies (tmdb_id);
+      CREATE INDEX IF NOT EXISTS index_movies_on_vote_average ON movies (vote_average);
+    SQL
+
+    puts "Indexes restored."
+  end
+
   private
 
-  def download_and_extract(kaggle_url, csv_path, zip_name)
+  def download_and_extract(kaggle_url, csv_path, zip_name, extract_filename = nil)
     download_path = Rails.root.join('tmp', zip_name)
 
     # Download dataset
@@ -42,9 +88,16 @@ namespace :tmdb do
       puts "CSV file already exists at #{csv_path}. Skipping extraction."
     else
       puts "Extracting #{zip_name}..."
-      system("unzip -j #{download_path} -d #{Rails.root.join('tmp')}")
+      if extract_filename
+        # Extract specific file and rename
+        system("unzip -j #{download_path} #{extract_filename} -d #{Rails.root.join('tmp')}")
+        FileUtils.mv(Rails.root.join('tmp', extract_filename), csv_path) if extract_filename != File.basename(csv_path)
+      else
+        system("unzip -j #{download_path} -d #{Rails.root.join('tmp')}")
+      end
     end
   end
+
   def activerecord_batch_import(csv_path, batch_size, media_type)
     puts "Importing #{media_type}s from #{csv_path} (batch size: #{batch_size})..."
 
@@ -106,7 +159,153 @@ namespace :tmdb do
     }
   end
 
-  # Helper method to download file with progress bar
+  def overlay_imdb_data_in_memory(imdb_csv_path)
+    puts "Loading IMDb data from #{imdb_csv_path}..."
+
+    # Parse IMDb data into a lookup structure
+    imdb_by_id = {}
+    imdb_by_title = {}
+    imdb_by_title_year = {}
+
+    total_imdb_records = 0
+
+    # First pass: Load all IMDb data into memory
+    CSV.foreach(imdb_csv_path, headers: true) do |row|
+      begin
+        # Skip rows without valid ID or title
+        next if row['id'].blank? || row['title'].blank?
+
+        imdb_id = row['id']
+        title = row['title']
+        release_year = row['releaseYear'].to_i
+        average_rating = row['averageRating'].to_f
+        num_votes = row['numVotes'].to_i
+        media_type = row['type']
+
+        # Map IMDb type to our media_type format
+        normalized_type = case media_type
+                          when 'movie'
+                            'movie'
+                          when 'tvSeries', 'tvMiniSeries'
+                            'tv'
+                          else
+                            nil
+                          end
+
+        # Skip if no valid type mapping or no rating/votes
+        next if normalized_type.nil? || average_rating == 0 || num_votes == 0
+
+        # Store IMDb records by ID
+        imdb_by_id[imdb_id] = {
+          title: title,
+          release_year: release_year,
+          vote_average: average_rating,
+          vote_count: num_votes,
+          media_type: normalized_type
+        }
+
+        # Store IMDb records by title
+        key = "#{title}|#{normalized_type}"
+        imdb_by_title[key] ||= []
+        imdb_by_title[key] << {
+          imdb_id: imdb_id,
+          release_year: release_year,
+          vote_average: average_rating,
+          vote_count: num_votes,
+          media_type: normalized_type
+        }
+
+        # Store IMDb records by title and year
+        if release_year > 0
+          key = "#{title}|#{release_year}|#{normalized_type}"
+          imdb_by_title_year[key] = {
+            imdb_id: imdb_id,
+            vote_average: average_rating,
+            vote_count: num_votes,
+            media_type: normalized_type
+          }
+        end
+
+        total_imdb_records += 1
+      rescue => e
+        puts "Error processing IMDb row: #{e.message}"
+      end
+    end
+
+    puts "Loaded #{total_imdb_records} IMDb records"
+
+    # Second pass: Load all movies into memory
+    puts "Loading all movies from database..."
+    all_movies = Movie.all.to_a
+    puts "Loaded #{all_movies.size} movies from database"
+
+    # Third pass: Update movies in memory
+    updated_movies = []
+    puts "Updating movies in memory..."
+
+    all_movies.each do |movie|
+      updated = false
+
+      # Case 1: Direct IMDb ID match
+      if movie.imdb_id.present? && imdb_data = imdb_by_id[movie.imdb_id]
+        # Make sure media_type matches
+        if imdb_data[:media_type] == movie.media_type
+          movie.vote_average = imdb_data[:vote_average]
+          movie.vote_count = imdb_data[:vote_count]
+          updated = true
+          puts "Matched by IMDb ID: #{movie.title} (#{movie.release_date&.year})"
+          # links
+          puts "IMDb Link: https://www.imdb.com/title/#{movie.imdb_id}"
+          puts "TMDB Link: https://www.themoviedb.org/#{movie.media_type}/#{movie.tmdb_id}"
+        end
+      # Case 2: Title and release year match
+      elsif movie.title.present? && movie.original_title.present? &&
+            movie.title.downcase == movie.original_title.downcase &&
+            movie.release_date && movie.release_date.year > 0
+        key = "#{movie.title}|#{movie.release_date.year}|#{movie.media_type}"
+        if imdb_data = imdb_by_title_year[key]
+          # Double-check media_type
+          if imdb_data[:media_type] == movie.media_type
+            movie.imdb_id = imdb_data[:imdb_id]
+            movie.vote_average = imdb_data[:vote_average]
+            movie.vote_count = imdb_data[:vote_count]
+            updated = true
+            puts "Matched by title and year: #{movie.title} (#{movie.release_date.year})"
+            # links
+            puts "IMDb Link: https://www.imdb.com/title/#{movie.imdb_id}"
+            puts "TMDB Link: https://www.themoviedb.org/#{movie.media_type}/#{movie.tmdb_id}"
+          end
+        end
+      end
+
+      updated_movies << movie if updated
+
+      # Print progress
+      if updated_movies.size % 1000 == 0
+        print "\rUpdated #{updated_movies.size} movies so far..."
+      end
+    end
+
+    # Fourth pass: Bulk save only updated movies in batches
+    puts "\nSaving updated movies to database in batches of 5000..."
+
+    total_saved = 0
+    batch_size = 5000
+    total_movies = updated_movies.size
+
+    # Import in batches of 5000
+    updated_movies.each_slice(batch_size) do |batch|
+      Movie.import batch, validate: false, timestamps: false, on_duplicate_key_update: {
+        conflict_target: [:tmdb_id, :media_type],
+        columns: [:imdb_id, :vote_average, :vote_count, :release_date]
+      }
+      total_saved += batch.size
+      print "\rSaved #{total_saved}/#{total_movies} updated movies (#{(total_saved.to_f/total_movies*100).round(2)}%)..."
+    end
+
+    puts "\nCompleted IMDb overlay. Total updated movies reimported: #{updated_movies.size}"
+  end
+
   def download_with_progress(url, output_path)
     begin
       uri = URI(url)
